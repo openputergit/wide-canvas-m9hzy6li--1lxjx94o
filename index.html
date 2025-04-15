@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BGMI Tournament Points Manager</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Poppins', sans-serif;
+            background-color: #1a202c;
+        }
+        .loading {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="text-white min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-8">BGMI Tournament Points Manager</h1>
+        
+        <!-- Match Creation Form -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Create New Match</h2>
+            <form id="matchForm" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input type="text" id="matchName" placeholder="Match Name" class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+                    <input type="date" id="matchDate" class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+                </div>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded font-semibold">Create Match</button>
+            </form>
+        </div>
+
+        <!-- Team Points Form -->
+        <div class="bg-gray-800 rounded-lg p-6 mb-8">
+            <h2 class="text-xl font-semibold mb-4">Update Team Points</h2>
+            <form id="pointsForm" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <select id="matchSelect" class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+                        <option value="">Select Match</option>
+                    </select>
+                    <input type="text" id="teamName" placeholder="Team Name" class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+                    <input type="number" id="points" placeholder="Points" class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <input type="number" id="kills" placeholder="Kills" class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+                    <input type="number" id="position" placeholder="Position" class="w-full p-2 rounded bg-gray-700 border border-gray-600">
+                </div>
+                <button type="submit" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded font-semibold">Update Points</button>
+            </form>
+        </div>
+
+        <!-- Points Table -->
+        <div class="bg-gray-800 rounded-lg p-6">
+            <h2 class="text-xl font-semibold mb-4">Tournament Standings</h2>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                    <thead class="text-xs uppercase bg-gray-700">
+                        <tr>
+                            <th class="px-6 py-3">Rank</th>
+                            <th class="px-6 py-3">Team</th>
+                            <th class="px-6 py-3">Total Points</th>
+                            <th class="px-6 py-3">Total Kills</th>
+                            <th class="px-6 py-3">Matches</th>
+                        </tr>
+                    </thead>
+                    <tbody id="pointsTable"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const appSlug = 'bgmi-tournament-123456';
+        const API_URL = 'https://r0c8kgwocscg8gsokogwwsw4.zetaverse.one/mongodb';
+        const headers = {
+            'Authorization': 'Bearer LVkXqkC8dYTQuquZo6ozcrsb1WM2',
+            'Content-Type': 'application/json'
+        };
+
+        // Load matches and update standings on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadMatches();
+            updateStandings();
+        });
+
+        // Create new match
+        document.getElementById('matchForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const matchName = document.getElementById('matchName').value;
+            const matchDate = document.getElementById('matchDate').value;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        appSlug,
+                        action: 'create',
+                        collection: 'matches',
+                        data: { matchName, matchDate, teams: [] }
+                    })
+                });
+
+                if (response.ok) {
+                    alert('Match created successfully!');
+                    loadMatches();
+                    e.target.reset();
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to create match');
+            }
+        });
+
+        // Update team points
+        document.getElementById('pointsForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const matchId = document.getElementById('matchSelect').value;
+            const teamName = document.getElementById('teamName').value;
+            const points = parseInt(document.getElementById('points').value);
+            const kills = parseInt(document.getElementById('kills').value);
+            const position = parseInt(document.getElementById('position').value);
+
+            try {
+                // First, update or create team stats
+                const teamResponse = await fetch(API_URL, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        appSlug,
+                        action: 'update',
+                        collection: 'teams',
+                        conditions: { teamName },
+                        data: {
+                            $inc: {
+                                totalPoints: points + kills,
+                                totalKills: kills,
+                                matchesPlayed: 1
+                            }
+                        }
+                    })
+                });
+
+                if (teamResponse.ok) {
+                    // Then update match data
+                    const matchResponse = await fetch(API_URL, {
+                        method: 'POST',
+                        headers,
+                        body: JSON.stringify({
+                            appSlug,
+                            action: 'update',
+                            collection: 'matches',
+                            conditions: { _id: matchId },
+                            data: {
+                                $push: {
+                                    teams: {
+                                        teamName,
+                                        points,
+                                        kills,
+                                        position,
+                                        totalPoints: points + kills
+                                    }
+                                }
+                            }
+                        })
+                    });
+
+                    if (matchResponse.ok) {
+                        alert('Points updated successfully!');
+                        updateStandings();
+                        e.target.reset();
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                alert('Failed to update points');
+            }
+        });
+
+        // Load matches into select dropdown
+        async function loadMatches() {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        appSlug,
+                        action: 'read',
+                        collection: 'matches'
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const matchSelect = document.getElementById('matchSelect');
+                    matchSelect.innerHTML = '<option value="">Select Match</option>';
+                    
+                    data.result.forEach(match => {
+                        const option = document.createElement('option');
+                        option.value = match._id;
+                        option.textContent = `${match.matchName} (${match.matchDate})`;
+                        matchSelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        // Update standings table
+        async function updateStandings() {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify({
+                        appSlug,
+                        action: 'read',
+                        collection: 'teams'
+                    })
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const standings = data.result.sort((a, b) => b.totalPoints - a.totalPoints);
+                    const tableBody = document.getElementById('pointsTable');
+                    tableBody.innerHTML = '';
+
+                    standings.forEach((team, index) => {
+                        const row = document.createElement('tr');
+                        row.className = 'bg-gray-800 border-b border-gray-700';
+                        row.innerHTML = `
+                            <td class="px-6 py-4">${index + 1}</td>
+                            <td class="px-6 py-4">${team.teamName}</td>
+                            <td class="px-6 py-4">${team.totalPoints || 0}</td>
+                            <td class="px-6 py-4">${team.totalKills || 0}</td>
+                            <td class="px-6 py-4">${team.matchesPlayed || 0}</td>
+                        `;
+                        tableBody.appendChild(row);
+                    });
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+    </script>
+<script>document.body.addEventListener('wheel', e => { if (!e.ctrlKey) return; e.preventDefault(); return }, { passive: false })</script>
+	</body>
+</html>
